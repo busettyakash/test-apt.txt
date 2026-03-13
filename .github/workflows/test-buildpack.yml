@@ -23,7 +23,7 @@ jobs:
           pack build test-ffmpeg \
             --builder paketobuildpacks/builder-jammy-base \
             --buildpack paketo-buildpacks/apt \
-            --buildpack paketo-buildpacks/python
+            --buildpack paketo-buildpacks/python \
             --path ./test-build
 
       - name: Test container
