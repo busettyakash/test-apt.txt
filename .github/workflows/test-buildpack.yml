@@ -24,6 +24,7 @@ jobs:
             --builder paketobuildpacks/builder-jammy-base \
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/python
+            --path ./test-build
 
       - name: Test container
         run: |
