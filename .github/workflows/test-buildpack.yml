@@ -30,7 +30,7 @@ jobs:
 
       - name: Find and test ffmpeg
         run: |
-          FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c "find / -name ffmpeg -type f 2>/dev/null | head -1")
+          FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c "find / -name ffmpeg -type f -executable 2>/dev/null | head -1")
           echo "ffmpeg found at: $FFMPEG_PATH"
           if [ -n "$FFMPEG_PATH" ]; then
             docker run --rm --entrypoint bash test-ffmpeg -c "$FFMPEG_PATH -version"
