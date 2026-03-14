@@ -1,6 +1,5 @@
 ffmpeg
 libglib2.0-0
-libgobject-2.0-0
 libavcodec-extra
 libavformat-dev
 libavutil-dev
