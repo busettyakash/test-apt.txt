@@ -27,21 +27,14 @@ jobs:
             --builder paketobuildpacks/builder-jammy-base \
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/python \
-            --path ./test-build \
-            --verbose
-
-      - name: Debug ffmpeg in container
-        run: |
-          echo "--- Checking Aptfile in container ---"
-          docker run --rm --entrypoint bash test-ffmpeg -c "cat /workspace/Aptfile || echo 'Aptfile not found'"
-          echo "--- Checking ffmpeg binary ---"
-          docker run --rm --entrypoint bash test-ffmpeg -c "find / -name ffmpeg 2>/dev/null | head -5 || echo 'ffmpeg not found anywhere'"
-          echo "--- Checking PATH ---"
-          docker run --rm --entrypoint bash test-ffmpeg -c "echo \$PATH"
+            --env PATH="/layers/paketo-buildpacks_apt/apt/usr/bin:/cnb/process:/cnb/lifecycle:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            --path ./test-build
 
       - name: Test ffmpeg in container
         run: |
-          if docker run --rm --entrypoint ffmpeg test-ffmpeg -version > /dev/null 2>&1; then
+          if docker run --rm \
+            --env PATH="/layers/paketo-buildpacks_apt/apt/usr/bin:/cnb/process:/cnb/lifecycle:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            --entrypoint ffmpeg test-ffmpeg -version > /dev/null 2>&1; then
             echo "✓ ffmpeg is installed and working"
           else
             echo "✗ ffmpeg not found in container"
