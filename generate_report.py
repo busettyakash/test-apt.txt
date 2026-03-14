@@ -17,7 +17,7 @@ html = f"""
 <p>{status}</p>
 
 <h2>Version</h2>
-<pre>{version}</pre>
+<pre>{ffmpeg_version}</pre>
 
 </body>
 </html>
