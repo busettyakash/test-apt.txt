@@ -4,3 +4,7 @@ libavcodec-extra
 libavformat-dev
 libavutil-dev
 libswresample-dev
+libpulse0
+libblas3
+liblapack3
+libgomp1
