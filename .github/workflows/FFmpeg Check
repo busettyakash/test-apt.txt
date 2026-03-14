@@ -1,0 +1,55 @@
+name: FFmpeg Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download static FFmpeg
+        run: |
+          mkdir -p ffmpeg
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
+          tar -xJf ffmpeg.tar.xz
+          cp ffmpeg-*-amd64-static/ffmpeg ffmpeg/
+          chmod +x ffmpeg/ffmpeg
+
+      - name: Check FFmpeg
+        run: |
+          VERSION=$(./ffmpeg/ffmpeg -version | head -n 1)
+          SIZE=$(du -h ./ffmpeg/ffmpeg | cut -f1)
+
+          echo "Version: $VERSION"
+          echo "Size: $SIZE"
+
+          export FFMPEG_VERSION_VAR="$VERSION"
+          export FFMPEG_SIZE_VAR="$SIZE"
+          export BUILD_DATE_VAR="$(date)"
+
+          mkdir -p docs
+          touch docs/.nojekyll
+
+          python3 generate_report.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Deploy
+        uses: actions/deploy-pages@v4
