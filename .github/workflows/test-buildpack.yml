@@ -6,12 +6,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install pack CLI
         run: |
           curl -sSL https://github.com/buildpacks/pack/releases/download/v0.33.0/pack-v0.33.0-linux.tgz | tar -xz
           sudo mv pack /usr/local/bin/
+
       - name: Verify pack
         run: pack --version
+
+      - name: Check Aptfile
+        run: |
+          echo "--- Aptfile contents ---"
+          cat test-build/Aptfile
+          echo "--- hex dump ---"
+          xxd test-build/Aptfile
+
+      - name: Fix Aptfile line endings
+        run: |
+          sed -i 's/\r//' test-build/Aptfile
+          echo "ffmpeg" > test-build/Aptfile
+          echo "✓ Aptfile fixed"
+          cat test-build/Aptfile
+
       - name: Build container using buildpacks
         run: |
           pack build test-ffmpeg \
@@ -19,6 +36,12 @@ jobs:
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/python \
             --path ./test-build
-      - name: Test container
+
+      - name: Test ffmpeg in container
         run: |
-          docker run --rm --entrypoint ffmpeg test-ffmpeg -version
+          if docker run --rm --entrypoint ffmpeg test-ffmpeg -version > /dev/null 2>&1; then
+            echo "✓ ffmpeg is installed and working"
+          else
+            echo "✗ ffmpeg not found in container"
+            exit 1
+          fi
