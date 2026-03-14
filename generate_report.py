@@ -1,6 +1,6 @@
 import os
 
-version = os.getenv("FFMPEG_VERSION_VAR", "not found")
+ffmpeg_version = os.getenv("FFMPEG_VERSION_VAR", "not found")
 
 status = "Installed" if "ffmpeg version" in version else "Not Installed"
 
