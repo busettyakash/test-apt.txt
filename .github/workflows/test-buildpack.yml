@@ -15,18 +15,10 @@ jobs:
       - name: Verify pack
         run: pack --version
 
-      - name: Check Aptfile
+      - name: Fix Aptfile
         run: |
-          echo "--- Aptfile contents ---"
-          cat test-build/Aptfile
-          echo "--- hex dump ---"
-          xxd test-build/Aptfile
-
-      - name: Fix Aptfile line endings
-        run: |
-          sed -i 's/\r//' test-build/Aptfile
           echo "ffmpeg" > test-build/Aptfile
-          echo "✓ Aptfile fixed"
+          echo "✓ Aptfile contents:"
           cat test-build/Aptfile
 
       - name: Build container using buildpacks
@@ -35,7 +27,17 @@ jobs:
             --builder paketobuildpacks/builder-jammy-base \
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/python \
-            --path ./test-build
+            --path ./test-build \
+            --verbose
+
+      - name: Debug ffmpeg in container
+        run: |
+          echo "--- Checking Aptfile in container ---"
+          docker run --rm --entrypoint bash test-ffmpeg -c "cat /workspace/Aptfile || echo 'Aptfile not found'"
+          echo "--- Checking ffmpeg binary ---"
+          docker run --rm --entrypoint bash test-ffmpeg -c "find / -name ffmpeg 2>/dev/null | head -5 || echo 'ffmpeg not found anywhere'"
+          echo "--- Checking PATH ---"
+          docker run --rm --entrypoint bash test-ffmpeg -c "echo \$PATH"
 
       - name: Test ffmpeg in container
         run: |
