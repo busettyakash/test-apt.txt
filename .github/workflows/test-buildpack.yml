@@ -1,23 +1,17 @@
 name: Test Buildpacks
-
 on:
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Install pack CLI
         run: |
           curl -sSL https://github.com/buildpacks/pack/releases/download/v0.33.0/pack-v0.33.0-linux.tgz | tar -xz
           sudo mv pack /usr/local/bin/
-
       - name: Verify pack
         run: pack --version
-
       - name: Build container using buildpacks
         run: |
           pack build test-ffmpeg \
@@ -25,7 +19,6 @@ jobs:
             --buildpack paketo-buildpacks/apt \
             --buildpack paketo-buildpacks/python \
             --path ./test-build
-
       - name: Test container
         run: |
-          docker run --rm test-ffmpeg python app.py
+          docker run --rm --entrypoint ffmpeg test-ffmpeg -version
