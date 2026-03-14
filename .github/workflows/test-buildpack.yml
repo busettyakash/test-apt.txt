@@ -4,6 +4,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -19,8 +21,6 @@ jobs:
         run: |
           echo "--- Aptfile contents ---"
           cat test-build/Aptfile
-          echo "--- line count ---"
-          wc -l test-build/Aptfile
 
       - name: Build container using buildpacks
         run: |
@@ -30,18 +30,66 @@ jobs:
             --buildpack paketo-buildpacks/python \
             --path ./test-build
 
-      - name: Find and test ffmpeg
+      - name: Find missing libraries and test ffmpeg
         run: |
           FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c "find / -name ffmpeg -type f -executable 2>/dev/null | head -1")
           echo "ffmpeg found at: $FFMPEG_PATH"
 
-          echo "--- Finding libgobject ---"
-          docker run --rm --entrypoint bash test-ffmpeg -c "find /layers -name 'libgobject*' 2>/dev/null"
+          MISSING=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+            "LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib:/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu ldd $FFMPEG_PATH 2>&1 | grep 'not found'")
 
-          echo "--- All lib directories in apt layer ---"
-          docker run --rm --entrypoint bash test-ffmpeg -c "find /layers -type d -name 'lib*' 2>/dev/null"
+          FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+            "LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib:/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu $FFMPEG_PATH -version 2>&1 || true")
 
-          if [ -n "$FFMPEG_PATH" ]; then
-            docker run --rm --entrypoint bash test-ffmpeg -c \
-              "LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib:/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu $FFMPEG_PATH -version"
-            echo "✓ ffmpeg is installed and working"
+          # Generate HTML report
+          mkdir -p docs
+          cat > docs/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>FFmpeg Build Test Report</title>
+            <style>
+              body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+              h1 { color: #569cd6; }
+              h2 { color: #9cdcfe; }
+              .pass { color: #4ec9b0; }
+              .fail { color: #f44747; }
+              .box { background: #2d2d2d; padding: 15px; border-radius: 5px; margin: 10px 0; white-space: pre-wrap; }
+              .badge-pass { background: #4ec9b0; color: black; padding: 4px 10px; border-radius: 4px; }
+              .badge-fail { background: #f44747; color: white; padding: 4px 10px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <h1>🐳 FFmpeg Buildpack Test Report</h1>
+            <p>Built: $(date)</p>
+            <p>Builder: paketobuildpacks/builder-jammy-base</p>
+
+            <h2>Aptfile</h2>
+            <div class="box">$(cat test-build/Aptfile)</div>
+
+            <h2>ffmpeg Path</h2>
+            <div class="box">$FFMPEG_PATH</div>
+
+            <h2>Missing Libraries</h2>
+            <div class="box">$([ -z "$MISSING" ] && echo "✓ No missing libraries" || echo "$MISSING")</div>
+
+            <h2>ffmpeg Version Output</h2>
+            <div class="box">$FFMPEG_VERSION</div>
+
+            <h2>Result</h2>
+            $([ -z "$MISSING" ] && echo '<span class="badge-pass">✓ PASS</span>' || echo '<span class="badge-fail">✗ FAIL - Missing libraries</span>')
+          </body>
+          </html>
+          EOF
+
+          echo "✓ Report generated"
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          publish_branch: gh-pages
+After the workflow runs, your report will be at:
+```
+https://<your-username>.github.io/<repo-name>/
