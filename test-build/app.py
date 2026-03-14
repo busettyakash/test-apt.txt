@@ -1,7 +1,14 @@
 import subprocess
+import sys
 
 print("Testing ffmpeg...")
 
 result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
 
-print(result.stdout)
+if result.returncode == 0:
+    print(result.stdout)
+    print("✓ ffmpeg is installed and working")
+else:
+    print(result.stderr)
+    print("✗ ffmpeg not found")
+    sys.exit(1)
