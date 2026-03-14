@@ -22,6 +22,11 @@ jobs:
       - name: Verify pack
         run: pack --version
 
+      - name: Check Aptfile
+        run: |
+          echo "--- Aptfile contents ---"
+          cat test-build/Aptfile
+
       - name: Build container using buildpacks
         run: |
           pack build test-ffmpeg \
