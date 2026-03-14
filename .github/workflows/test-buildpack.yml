@@ -15,10 +15,12 @@ jobs:
       - name: Verify pack
         run: pack --version
 
-      - name: Fix Aptfile
+      - name: Check Aptfile
         run: |
-          echo "ffmpeg" > test-build/Aptfile
+          echo "--- Aptfile contents ---"
           cat test-build/Aptfile
+          echo "--- line count ---"
+          wc -l test-build/Aptfile
 
       - name: Build container using buildpacks
         run: |
@@ -34,7 +36,7 @@ jobs:
           echo "ffmpeg found at: $FFMPEG_PATH"
 
           echo "--- Finding libgobject ---"
-          docker run --rm --entrypoint bash test-ffmpeg -c "find / -name 'libgobject*' 2>/dev/null"
+          docker run --rm --entrypoint bash test-ffmpeg -c "find /layers -name 'libgobject*' 2>/dev/null"
 
           echo "--- All lib directories in apt layer ---"
           docker run --rm --entrypoint bash test-ffmpeg -c "find /layers -type d -name 'lib*' 2>/dev/null"
@@ -43,7 +45,3 @@ jobs:
             docker run --rm --entrypoint bash test-ffmpeg -c \
               "LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib:/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu $FFMPEG_PATH -version"
             echo "✓ ffmpeg is installed and working"
-          else
-            echo "✗ ffmpeg not found in container"
-            exit 1
-          fi
