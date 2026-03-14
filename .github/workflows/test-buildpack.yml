@@ -1,6 +1,8 @@
 name: Test Buildpacks
+
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -8,6 +10,7 @@ jobs:
       contents: write
       pages: write
       id-token: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,39 +22,24 @@ jobs:
       - name: Verify pack
         run: pack --version
 
-      - name: Check Aptfile
-        run: |
-          echo "--- Aptfile contents ---"
-          cat test-build/Aptfile
-
       - name: Build container using buildpacks
         run: |
           pack build test-ffmpeg \
             --builder paketobuildpacks/builder-jammy-base \
             --buildpack paketo-buildpacks/apt \
-            --buildpack paketo-buildpacks/python \
             --path ./test-build
 
-      - name: Find missing libraries and test ffmpeg
+      - name: Check FFmpeg
         run: |
-          FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c "find / -name ffmpeg -type f -executable 2>/dev/null | head -1")
-          echo "ffmpeg found at: $FFMPEG_PATH"
+          FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c "which ffmpeg")
+          FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c "ffmpeg -version 2>&1")
 
-          MISSING=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib:/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu ldd $FFMPEG_PATH 2>&1 | grep 'not found'" || true)
-
-          FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib:/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu $FFMPEG_PATH -version 2>&1" || true)
-
-          echo "Missing: $MISSING"
+          echo "FFmpeg Path: $FFMPEG_PATH"
           echo "Version: $FFMPEG_VERSION"
 
           export FFMPEG_PATH_VAR="$FFMPEG_PATH"
-          export MISSING_VAR="$MISSING"
           export FFMPEG_VERSION_VAR="$FFMPEG_VERSION"
-          export APTFILE_VAR="$(cat test-build/Aptfile)"
           export BUILD_DATE_VAR="$(date)"
-          export STATUS_VAR=$([ -z "$MISSING" ] && echo "pass" || echo "fail")
 
           mkdir -p docs
           touch docs/.nojekyll
@@ -69,9 +57,11 @@ jobs:
     permissions:
       pages: write
       id-token: write
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
