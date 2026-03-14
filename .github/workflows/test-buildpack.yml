@@ -51,6 +51,9 @@ jobs:
           export BUILD_DATE_VAR="$(date)"
           export STATUS_VAR=$([ -z "$MISSING" ] && echo "pass" || echo "fail")
 
+          mkdir -p docs
+          touch docs/.nojekyll
+
           python3 generate_report.py
 
       - name: Deploy to GitHub Pages
@@ -59,3 +62,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
           publish_branch: gh-pages
+          enable_jekyll: false
