@@ -1,4 +1,4 @@
-name: Test FFmpeg 
+name: Test FFmpeg
 
 on:
   workflow_dispatch:
@@ -28,24 +28,34 @@ jobs:
             --buildpack paketo-buildpacks/apt \
             --path .
 
-      - name: Test ffmpeg and write summary
+      - name: Run check_ffmpeg.py inside container
         run: |
-          echo "Testing ffmpeg installation..."
+          echo "Running check_ffmpeg.py..."
 
           # Find launcher full path inside the image
           LAUNCHER=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "find / -name launcher -type f 2>/dev/null | head -1")
           echo "Launcher path: $LAUNCHER"
 
-          # Test ffmpeg version via launcher
+          # Run check_ffmpeg.py via launcher (same env as voice.py)
+          CHECK_OUTPUT=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+            "$LAUNCHER bash -c 'python check_ffmpeg.py'" || echo "SCRIPT FAILED")
+
+          echo "$CHECK_OUTPUT"
+
+          # ── ffmpeg version ──
           FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "$LAUNCHER bash -c 'ffmpeg -version 2>&1 | head -1'" || echo "NOT FOUND")
 
-          # Test ffmpeg path via launcher
+          # ── which ffmpeg (PATH check) ──
           FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "$LAUNCHER bash -c 'which ffmpeg 2>/dev/null || echo NOT FOUND'")
 
-          # Test webm to wav conversion (exactly what _do_stt() does)
+          # ── PATH dirs check ──
+          PATH_DIRS=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+            "$LAUNCHER bash -c 'echo \$PATH'")
+
+          # ── WebM → WAV conversion (same as _do_stt() in voice.py) ──
           CONVERSION_RESULT=$(docker run --rm --entrypoint bash test-ffmpeg -c "
             $LAUNCHER bash -c '
               ffmpeg -f lavfi -i sine=frequency=1000:duration=1 /tmp/test.webm -y 2>/dev/null && \
@@ -56,10 +66,11 @@ jobs:
 
           echo "FFmpeg Version : $FFMPEG_VERSION"
           echo "FFmpeg Path    : $FFMPEG_PATH"
+          echo "PATH dirs      : $PATH_DIRS"
           echo "Conversion     : $CONVERSION_RESULT"
           echo "Launcher       : $LAUNCHER"
 
-          # Set status flags
+          # ── Status flags ──
           if [[ "$FFMPEG_VERSION" == *"ffmpeg version"* ]]; then
             STATUS="✅ PASSED"
             INSTALLED="✅ YES"
@@ -74,12 +85,12 @@ jobs:
             CONV="❌ FAILED"
           fi
 
-          # Write GitHub Job Summary
+          # ── GitHub Job Summary ──
           echo "# 🐳 FFmpeg Buildpack Test Report"                              >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
           echo "**Overall Status: ${STATUS}**"                                  >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
-          echo "## 📦 FFmpeg Installation"                                      >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 FFmpeg Installation (via check_ffmpeg.py)"               >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|"                                              >> $GITHUB_STEP_SUMMARY
           echo "| Installed | ${INSTALLED} |"                                  >> $GITHUB_STEP_SUMMARY
@@ -87,12 +98,18 @@ jobs:
           echo "| Path | \`${FFMPEG_PATH}\` |"                                 >> $GITHUB_STEP_SUMMARY
           echo "| Launcher | \`${LAUNCHER}\` |"                                >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
-          echo "## 🎵 WebM → WAV Conversion Test"                              >> $GITHUB_STEP_SUMMARY
+          echo "## 🔍 PATH Check"                                               >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|"                                              >> $GITHUB_STEP_SUMMARY
+          echo "| PATH dirs | \`${PATH_DIRS}\` |"                              >> $GITHUB_STEP_SUMMARY
+          echo "| which ffmpeg | \`${FFMPEG_PATH}\` |"                         >> $GITHUB_STEP_SUMMARY
+          echo ""                                                                >> $GITHUB_STEP_SUMMARY
+          echo "## 🎵 WebM → WAV Conversion (_do_stt() in voice.py)"          >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|"                                              >> $GITHUB_STEP_SUMMARY
           echo "| Result | ${CONV} |"                                          >> $GITHUB_STEP_SUMMARY
           echo "| Command | \`ffmpeg -y -i test.webm -ar 16000 -ac 1 test.wav\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Used By | \`voice_router.py → _do_stt()\` |"                >> $GITHUB_STEP_SUMMARY
+          echo "| Used By | \`voice.py → _do_stt()\` |"                       >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
           echo "## ⚙️ Build Configuration"                                     >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
@@ -100,23 +117,23 @@ jobs:
           echo "| Builder | \`paketobuildpacks/builder-jammy-base\` |"         >> $GITHUB_STEP_SUMMARY
           echo "| Apt Buildpack | \`paketo-buildpacks/apt\` ✅ |"              >> $GITHUB_STEP_SUMMARY
           echo "| Aptfile | \`ffmpeg\` |"                                       >> $GITHUB_STEP_SUMMARY
-          echo "| Agents | \`opportunity-agent, quote-agent\` |"               >> $GITHUB_STEP_SUMMARY
           echo "| Run ID | #${{ github.run_number }} |"                        >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |"                            >> $GITHUB_STEP_SUMMARY
           echo "| Branch | \`${{ github.ref_name }}\` |"                       >> $GITHUB_STEP_SUMMARY
           echo "| Date | $(date '+%Y-%m-%d %H:%M:%S UTC') |"                  >> $GITHUB_STEP_SUMMARY
 
-          # Print to logs
+          # ── Print to logs ──
           echo "============================================"
           echo "Launcher         : $LAUNCHER"
           echo "FFmpeg Installed : $INSTALLED"
           echo "FFmpeg Version   : $FFMPEG_VERSION"
           echo "FFmpeg Path      : $FFMPEG_PATH"
+          echo "PATH dirs        : $PATH_DIRS"
           echo "Conversion       : $CONV"
           echo "Overall Status   : $STATUS"
           echo "============================================"
 
-          # Fail the job if ffmpeg not found
+          # ── Fail job if ffmpeg not found ──
           if [[ "$FFMPEG_VERSION" != *"ffmpeg version"* ]]; then
             echo "❌ ffmpeg not found — failing job"
             exit 1
