@@ -28,25 +28,14 @@ jobs:
             --buildpack paketo-buildpacks/apt \
             --path .
 
-      - name: Run check_ffmpeg.py and test status
+      - name: Check ffmpeg install status
         run: |
-
           # Find launcher
           LAUNCHER=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "find / -name launcher -type f 2>/dev/null | head -1")
           echo "Launcher path: $LAUNCHER"
 
-          # Find python path
-          PYTHON_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "find / -name python3 -type f 2>/dev/null | head -1")
-          echo "Python path: $PYTHON_PATH"
-
-          # ── Run check_ffmpeg.py ──
-          CHECK_OUTPUT=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "$LAUNCHER bash -c '$PYTHON_PATH check_ffmpeg.py'" || echo "SCRIPT FAILED")
-          echo "$CHECK_OUTPUT"
-
-          # ── ffmpeg version ──
+          # ── ffmpeg version via launcher ──
           FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "$LAUNCHER bash -c 'ffmpeg -version 2>&1 | head -1'" || echo "NOT FOUND")
 
