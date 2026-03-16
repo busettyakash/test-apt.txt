@@ -36,10 +36,18 @@ jobs:
             INSTALLED="✅ YES"
             STATUS="✅ PASSED"
             FFMPEG_PATH="/layers/paketo-buildpacks_apt/apt/usr/bin/ffmpeg"
+
+            # ── Get size in MB ──
+            FFMPEG_SIZE=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+              "du -sh /layers/paketo-buildpacks_apt/apt/usr/bin/ffmpeg | cut -f1")
+            FFMPEG_SIZE_MB=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+              "du -sm /layers/paketo-buildpacks_apt/apt/usr/bin/ffmpeg | cut -f1")
           else
             INSTALLED="❌ NO"
             STATUS="❌ FAILED"
             FFMPEG_PATH="NOT FOUND"
+            FFMPEG_SIZE="N/A"
+            FFMPEG_SIZE_MB="N/A"
           fi
 
           # ── GitHub Job Summary ──
@@ -52,6 +60,7 @@ jobs:
           echo "|-------|-------|"                                              >> $GITHUB_STEP_SUMMARY
           echo "| Installed | ${INSTALLED} |"                                  >> $GITHUB_STEP_SUMMARY
           echo "| Path | \`${FFMPEG_PATH}\` |"                                 >> $GITHUB_STEP_SUMMARY
+          echo "| Binary Size | \`${FFMPEG_SIZE} (${FFMPEG_SIZE_MB} MB)\` |"  >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
           echo "## ⚙️ Build Configuration"                                     >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
@@ -68,6 +77,7 @@ jobs:
           echo "============================================"
           echo "FFmpeg Installed : $INSTALLED"
           echo "FFmpeg Path      : $FFMPEG_PATH"
+          echo "FFmpeg Size      : ${FFMPEG_SIZE} (${FFMPEG_SIZE_MB} MB)"
           echo "Overall Status   : $STATUS"
           echo "============================================"
 
