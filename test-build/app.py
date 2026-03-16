@@ -1,4 +1,5 @@
 import subprocess
+import os
 
 print("Testing ffmpeg...")
 
@@ -13,4 +14,34 @@ def _ensure_ffmpeg_path() -> None:
     except (FileNotFoundError, subprocess.CalledProcessError, OSError):
         print("❌ ffmpeg is NOT installed. Add 'ffmpeg' to Aptfile and include paketo-buildpacks/apt in buildpack config.")
 
+def _check_ffmpeg_path() -> None:
+    """Check if ffmpeg PATH is correctly set."""
+    print("\n── PATH Check ──────────────────────────────")
+    
+    # 1. Check PATH env
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    print(f"📁 PATH dirs count: {len(path_dirs)}")
+
+    # 2. Find ffmpeg in PATH
+    ffmpeg_found = False
+    for d in path_dirs:
+        ffmpeg_bin = os.path.join(d, "ffmpeg")
+        if os.path.exists(ffmpeg_bin):
+            print(f"✅ ffmpeg found in PATH: {ffmpeg_bin}")
+            ffmpeg_found = True
+            break
+
+    if not ffmpeg_found:
+        print("❌ ffmpeg binary not found in any PATH directory")
+
+    # 3. which/where check
+    which_result = subprocess.run(["which", "ffmpeg"], capture_output=True)
+    if which_result.returncode == 0:
+        print(f"✅ which ffmpeg: {which_result.stdout.decode().strip()}")
+    else:
+        print("❌ which ffmpeg: not found")
+
+    print("────────────────────────────────────────────\n")
+
 _ensure_ffmpeg_path()
+_check_ffmpeg_path()
