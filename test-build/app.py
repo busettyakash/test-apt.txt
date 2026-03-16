@@ -3,20 +3,22 @@ import os
 
 print("Testing ffmpeg...")
 
-LIB_PATH = "/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu"
+_STATIC_FFMPEG_DIR = os.path.join(os.path.dirname(__file__), "ffmpeg")
+_STATIC_FFMPEG_BIN = os.path.join(_STATIC_FFMPEG_DIR, "ffmpeg")
 
-def _set_lib_path() -> None:
-    """Set LD_LIBRARY_PATH for ffmpeg shared libraries."""
-    current_ld = os.environ.get("LD_LIBRARY_PATH", "")
-    if LIB_PATH not in current_ld:
-        os.environ["LD_LIBRARY_PATH"] = LIB_PATH + os.pathsep + current_ld
-        print(f"✅ LD_LIBRARY_PATH set: {os.environ['LD_LIBRARY_PATH']}")
+def _set_ffmpeg_path() -> None:
+    """Add static ffmpeg binary directory to PATH."""
+    current_path = os.environ.get("PATH", "")
+    if _STATIC_FFMPEG_DIR not in current_path:
+        os.environ["PATH"] = _STATIC_FFMPEG_DIR + os.pathsep + current_path
+        print(f"✅ PATH set: {os.environ['PATH']}")
     else:
-        print(f"✅ LD_LIBRARY_PATH already set: {current_ld}")
+        print(f"✅ PATH already set: {current_path}")
 
 def _ensure_ffmpeg_path() -> None:
-    """Ensure ffmpeg is on PATH. Installed via Cloud Native Buildpacks.
-    Aptfile must contain: ffmpeg"""
+    """Ensure static ffmpeg binary is available.
+    Download: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+    Place binary at: ffmpeg/ffmpeg"""
     try:
         result = subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
         version_line = result.stdout.decode().split("\n")[0]
@@ -24,10 +26,10 @@ def _ensure_ffmpeg_path() -> None:
         return
     except (FileNotFoundError, subprocess.CalledProcessError, OSError) as e:
         print(f"❌ ffmpeg is NOT installed: {e}")
-        print("   Aptfile must contain: ffmpeg")
+        print(f"   Expected static binary at: {_STATIC_FFMPEG_BIN}")
 
 def _check_ffmpeg_path() -> None:
-    """Check if ffmpeg PATH and library path are correctly set."""
+    """Check if static ffmpeg binary is correctly set."""
     print("\n── PATH Check ──────────────────────────────")
 
     # 1. Check PATH env
@@ -52,22 +54,21 @@ def _check_ffmpeg_path() -> None:
     else:
         print("❌ which ffmpeg: not found")
 
-    # 4. LD_LIBRARY_PATH check
-    ld = os.environ.get("LD_LIBRARY_PATH", "")
-    if LIB_PATH in ld:
-        print(f"✅ LD_LIBRARY_PATH: {ld}")
+    # 4. Static binary exists check
+    if os.path.exists(_STATIC_FFMPEG_BIN):
+        size_mb = os.path.getsize(_STATIC_FFMPEG_BIN) // (1024 * 1024)
+        print(f"✅ static binary found: {_STATIC_FFMPEG_BIN} ({size_mb} MB)")
     else:
-        print(f"❌ LD_LIBRARY_PATH missing: {LIB_PATH}")
+        print(f"❌ static binary NOT found: {_STATIC_FFMPEG_BIN}")
 
-    # 5. ffmpeg binary check only
-    ffmpeg_bin = "/layers/paketo-buildpacks_apt/apt/usr/bin/ffmpeg"
-    if os.path.exists(ffmpeg_bin):
-        print(f"✅ ffmpeg binary found: {ffmpeg_bin}")
+    # 5. Executable check
+    if os.access(_STATIC_FFMPEG_BIN, os.X_OK):
+        print(f"✅ ffmpeg is executable")
     else:
-        print(f"❌ ffmpeg binary NOT found — Add 'ffmpeg' to Aptfile")
+        print(f"❌ ffmpeg is NOT executable — run: chmod +x ffmpeg/ffmpeg")
 
     print("────────────────────────────────────────────\n")
 
-_set_lib_path()
+_set_ffmpeg_path()
 _ensure_ffmpeg_path()
 _check_ffmpeg_path()
