@@ -29,23 +29,39 @@ jobs:
           pack build test-ffmpeg \
             --builder paketobuildpacks/builder-jammy-base:latest \
             --buildpack paketo-buildpacks/apt \
-            --buildpack paketo-buildpacks/python \
-            --env BP_CPYTHON_VERSION=3.12.* \
             --path .
 
       - name: Test ffmpeg and generate report
         run: |
-          # Test ffmpeg version
-          FFMPEG_VERSION=$(docker run --rm test-ffmpeg bash -c "ffmpeg -version 2>&1 | head -1" || echo "NOT FOUND")
-          FFMPEG_PATH=$(docker run --rm test-ffmpeg bash -c "which ffmpeg 2>/dev/null || echo 'NOT FOUND'")
-          FFMPEG_PATH_ALL=$(docker run --rm test-ffmpeg bash -c "find / -name ffmpeg -type f -executable 2>/dev/null | head -5" || echo "NOT FOUND")
+          echo "Testing ffmpeg installation..."
 
-          # Test webm to wav conversion
-          CONVERSION_RESULT=$(docker run --rm test-ffmpeg bash -c "
-            ffmpeg -f lavfi -i sine=frequency=1000:duration=1 /tmp/test.webm -y 2>/dev/null && \
-            ffmpeg -y -i /tmp/test.webm -ar 16000 -ac 1 /tmp/test.wav 2>/dev/null && \
-            echo 'SUCCESS' || echo 'FAILED'
-          ")
+          # Test ffmpeg version
+          FFMPEG_VERSION=$(docker run --rm \
+            --entrypoint bash \
+            test-ffmpeg -c "ffmpeg -version 2>&1 | head -1" || echo "NOT FOUND")
+
+          # Test ffmpeg path
+          FFMPEG_PATH=$(docker run --rm \
+            --entrypoint bash \
+            test-ffmpeg -c "which ffmpeg 2>/dev/null || echo 'NOT FOUND'")
+
+          # Test all ffmpeg paths
+          FFMPEG_PATH_ALL=$(docker run --rm \
+            --entrypoint bash \
+            test-ffmpeg -c "find / -name ffmpeg -type f -executable 2>/dev/null | head -5" || echo "NOT FOUND")
+
+          # Test webm to wav conversion (exactly what _do_stt() does in voice_router.py)
+          CONVERSION_RESULT=$(docker run --rm \
+            --entrypoint bash \
+            test-ffmpeg -c "
+              ffmpeg -f lavfi -i sine=frequency=1000:duration=1 /tmp/test.webm -y 2>/dev/null && \
+              ffmpeg -y -i /tmp/test.webm -ar 16000 -ac 1 /tmp/test.wav 2>/dev/null && \
+              echo 'SUCCESS' || echo 'FAILED'
+            ")
+
+          echo "FFmpeg Version : $FFMPEG_VERSION"
+          echo "FFmpeg Path    : $FFMPEG_PATH"
+          echo "Conversion     : $CONVERSION_RESULT"
 
           # Set status
           if [[ "$FFMPEG_VERSION" == *"ffmpeg version"* ]]; then
@@ -67,6 +83,9 @@ jobs:
           fi
 
           BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S UTC')"
+          RUN_ID="${{ github.run_number }}"
+          COMMIT="${{ github.sha }}"
+          SHORT_COMMIT="${COMMIT:0:7}"
 
           # Generate HTML report
           mkdir -p docs
@@ -81,45 +100,113 @@ jobs:
             <title>FFmpeg Buildpack Test Report</title>
             <style>
               * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; padding: 40px 20px; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                background: #f5f7fa;
+                color: #333;
+                padding: 40px 20px;
+              }
               .container { max-width: 800px; margin: 0 auto; }
-              .header { background: #1a1a2e; color: white; padding: 32px; border-radius: 12px; margin-bottom: 24px; }
+              .header {
+                background: #1a1a2e;
+                color: white;
+                padding: 32px;
+                border-radius: 12px;
+                margin-bottom: 24px;
+              }
               .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
-              .header p { color: #a0aec0; font-size: 14px; }
-              .status-card { padding: 24px; border-radius: 12px; margin-bottom: 24px; background: white; border-left: 5px solid ${STATUS_COLOR}; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+              .header p { color: #a0aec0; font-size: 14px; margin-top: 4px; }
+              .status-card {
+                padding: 24px;
+                border-radius: 12px;
+                margin-bottom: 24px;
+                background: white;
+                border-left: 5px solid ${STATUS_COLOR};
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+              }
               .status-card h2 { font-size: 20px; margin-bottom: 8px; }
-              .status-badge { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; background: ${STATUS_COLOR}; color: white; }
-              .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-              .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #1a1a2e; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
-              .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+              .status-badge {
+                display: inline-block;
+                padding: 8px 20px;
+                border-radius: 20px;
+                font-size: 15px;
+                font-weight: 600;
+                background: ${STATUS_COLOR};
+                color: white;
+                margin-top: 12px;
+              }
+              .card {
+                background: white;
+                border-radius: 12px;
+                padding: 24px;
+                margin-bottom: 16px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+              }
+              .card h3 {
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 16px;
+                color: #1a1a2e;
+                border-bottom: 1px solid #e2e8f0;
+                padding-bottom: 8px;
+              }
+              .info-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 0;
+                border-bottom: 1px solid #f0f0f0;
+                font-size: 14px;
+              }
               .info-row:last-child { border-bottom: none; }
               .info-label { color: #718096; font-weight: 500; }
-              .info-value { color: #2d3748; font-weight: 600; font-family: monospace; }
-              .pass { color: #2d9e5f; }
-              .fail { color: #e53e3e; }
-              code { background: #f7fafc; padding: 2px 8px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #e53e3e; }
-              .footer { text-align: center; color: #a0aec0; font-size: 12px; margin-top: 24px; }
+              .info-value {
+                color: #2d3748;
+                font-weight: 600;
+                font-family: monospace;
+                max-width: 500px;
+                word-break: break-all;
+              }
+              code {
+                background: #f7fafc;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-family: monospace;
+                font-size: 13px;
+                color: #e53e3e;
+              }
+              .footer {
+                text-align: center;
+                color: #a0aec0;
+                font-size: 12px;
+                margin-top: 24px;
+              }
             </style>
           </head>
           <body>
             <div class="container">
+
               <div class="header">
                 <h1>🐳 FFmpeg Buildpack Test Report</h1>
                 <p>Revinci AI — Cloud Native Buildpacks</p>
-                <p style="margin-top:8px">Build Date: ${BUILD_DATE}</p>
+                <p>Build Date : ${BUILD_DATE}</p>
+                <p>Run ID     : #${RUN_ID}</p>
+                <p>Commit     : ${SHORT_COMMIT}</p>
               </div>
 
               <div class="status-card">
                 <h2>Overall Status</h2>
-                <p style="margin: 12px 0; color: #718096; font-size:14px">FFmpeg installation test via <code>paketo-buildpacks/apt</code></p>
-                <span class="status-badge">${STATUS}</span>
+                <p style="margin-top: 8px; color: #718096; font-size:14px">
+                  FFmpeg installation test via <code>paketo-buildpacks/apt</code>
+                </p>
+                <div class="status-badge">${STATUS}</div>
               </div>
 
               <div class="card">
                 <h3>📦 FFmpeg Installation</h3>
                 <div class="info-row">
                   <span class="info-label">Installed</span>
-                  <span class="info-value $([ "$INSTALLED" == "YES" ] && echo pass || echo fail)">${INSTALLED}</span>
+                  <span class="info-value" style="color: ${STATUS_COLOR}">${INSTALLED}</span>
                 </div>
                 <div class="info-row">
                   <span class="info-label">Version</span>
@@ -138,8 +225,8 @@ jobs:
               <div class="card">
                 <h3>🎵 WebM → WAV Conversion Test</h3>
                 <div class="info-row">
-                  <span class="info-label">Conversion Result</span>
-                  <span class="info-value">${CONV_STATUS}</span>
+                  <span class="info-label">Result</span>
+                  <span class="info-value" style="color: ${CONV_COLOR}">${CONV_STATUS}</span>
                 </div>
                 <div class="info-row">
                   <span class="info-label">Command</span>
@@ -159,18 +246,14 @@ jobs:
                 </div>
                 <div class="info-row">
                   <span class="info-label">Apt Buildpack</span>
-                  <span class="info-value">paketo-buildpacks/apt</span>
+                  <span class="info-value">paketo-buildpacks/apt ✅</span>
                 </div>
                 <div class="info-row">
-                  <span class="info-label">Python Buildpack</span>
-                  <span class="info-value">paketo-buildpacks/python</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Aptfile</span>
+                  <span class="info-label">Aptfile Contents</span>
                   <span class="info-value">ffmpeg</span>
                 </div>
                 <div class="info-row">
-                  <span class="info-label">Agents</span>
+                  <span class="info-label">Agents Using ffmpeg</span>
                   <span class="info-value">opportunity-agent, quote-agent</span>
                 </div>
               </div>
@@ -178,14 +261,13 @@ jobs:
               <div class="footer">
                 <p>Generated by GitHub Actions — Revinci AI © 2025</p>
               </div>
+
             </div>
           </body>
           </html>
           EOF
 
-          echo "✓ Report generated"
-          echo "FFmpeg installed: $INSTALLED"
-          echo "Conversion: $CONVERSION_RESULT"
+          echo "✓ Report generated successfully"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
