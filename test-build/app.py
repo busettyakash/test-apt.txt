@@ -3,22 +3,9 @@ import os
 
 print("Testing ffmpeg...")
 
-_STATIC_FFMPEG_DIR = os.path.join(os.path.dirname(__file__), "ffmpeg")
-_STATIC_FFMPEG_BIN = os.path.join(_STATIC_FFMPEG_DIR, "ffmpeg")
-
-def _set_ffmpeg_path() -> None:
-    """Add static ffmpeg binary directory to PATH."""
-    current_path = os.environ.get("PATH", "")
-    if _STATIC_FFMPEG_DIR not in current_path:
-        os.environ["PATH"] = _STATIC_FFMPEG_DIR + os.pathsep + current_path
-        print(f"✅ PATH set: {os.environ['PATH']}")
-    else:
-        print(f"✅ PATH already set: {current_path}")
-
 def _ensure_ffmpeg_path() -> None:
-    """Ensure static ffmpeg binary is available.
-    Download: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-    Place binary at: ffmpeg/ffmpeg"""
+    """Ensure ffmpeg is on PATH. Installed via Cloud Native Buildpacks.
+    Aptfile must contain: ffmpeg"""
     try:
         result = subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
         version_line = result.stdout.decode().split("\n")[0]
@@ -26,10 +13,10 @@ def _ensure_ffmpeg_path() -> None:
         return
     except (FileNotFoundError, subprocess.CalledProcessError, OSError) as e:
         print(f"❌ ffmpeg is NOT installed: {e}")
-        print(f"   Expected static binary at: {_STATIC_FFMPEG_BIN}")
+        print("   Aptfile must contain: ffmpeg")
 
 def _check_ffmpeg_path() -> None:
-    """Check if static ffmpeg binary is correctly set."""
+    """Check if ffmpeg is correctly installed."""
     print("\n── PATH Check ──────────────────────────────")
 
     # 1. Check PATH env
@@ -54,21 +41,21 @@ def _check_ffmpeg_path() -> None:
     else:
         print("❌ which ffmpeg: not found")
 
-    # 4. Static binary exists check
-    if os.path.exists(_STATIC_FFMPEG_BIN):
-        size_mb = os.path.getsize(_STATIC_FFMPEG_BIN) // (1024 * 1024)
-        print(f"✅ static binary found: {_STATIC_FFMPEG_BIN} ({size_mb} MB)")
+    # 4. ffmpeg binary check
+    ffmpeg_bin = "/usr/bin/ffmpeg"
+    if os.path.exists(ffmpeg_bin):
+        print(f"✅ ffmpeg binary found: {ffmpeg_bin}")
     else:
-        print(f"❌ static binary NOT found: {_STATIC_FFMPEG_BIN}")
-
-    # 5. Executable check
-    if os.access(_STATIC_FFMPEG_BIN, os.X_OK):
-        print(f"✅ ffmpeg is executable")
-    else:
-        print(f"❌ ffmpeg is NOT executable — run: chmod +x ffmpeg/ffmpeg")
+        print(f"❌ ffmpeg binary NOT found — Add 'ffmpeg' to Aptfile")
 
     print("────────────────────────────────────────────\n")
 
-_set_ffmpeg_path()
 _ensure_ffmpeg_path()
 _check_ffmpeg_path()
+```
+
+---
+
+**Also update `Aptfile`:**
+```
+ffmpeg
