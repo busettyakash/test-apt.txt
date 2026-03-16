@@ -30,27 +30,16 @@ jobs:
 
       - name: Check ffmpeg install status
         run: |
-          # ── ffmpeg version ──
-          FFMPEG_VERSION=$(docker run --rm \
-            -e PATH=/layers/paketo-buildpacks_apt/apt/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-            -e LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib \
-            --entrypoint bash test-ffmpeg -c \
-            "ffmpeg -version 2>&1 | head -1" || echo "NOT FOUND")
-
-          # ── ffmpeg path ──
-          FFMPEG_PATH=$(docker run --rm \
-            -e PATH=/layers/paketo-buildpacks_apt/apt/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-            -e LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib \
-            --entrypoint bash test-ffmpeg -c \
-            "which ffmpeg 2>/dev/null || echo NOT FOUND")
-
-          # ── Status flag ──
-          if [[ "$FFMPEG_VERSION" == *"ffmpeg version"* ]]; then
-            STATUS="✅ PASSED"
+          # ── Check binary exists in buildpack layer ──
+          if docker run --rm --entrypoint bash test-ffmpeg -c \
+            "test -f /layers/paketo-buildpacks_apt/apt/usr/bin/ffmpeg"; then
             INSTALLED="✅ YES"
+            STATUS="✅ PASSED"
+            FFMPEG_PATH="/layers/paketo-buildpacks_apt/apt/usr/bin/ffmpeg"
           else
-            STATUS="❌ FAILED"
             INSTALLED="❌ NO"
+            STATUS="❌ FAILED"
+            FFMPEG_PATH="NOT FOUND"
           fi
 
           # ── GitHub Job Summary ──
@@ -62,7 +51,6 @@ jobs:
           echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|"                                              >> $GITHUB_STEP_SUMMARY
           echo "| Installed | ${INSTALLED} |"                                  >> $GITHUB_STEP_SUMMARY
-          echo "| Version | \`${FFMPEG_VERSION}\` |"                           >> $GITHUB_STEP_SUMMARY
           echo "| Path | \`${FFMPEG_PATH}\` |"                                 >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
           echo "## ⚙️ Build Configuration"                                     >> $GITHUB_STEP_SUMMARY
@@ -79,13 +67,12 @@ jobs:
           # ── Print to logs ──
           echo "============================================"
           echo "FFmpeg Installed : $INSTALLED"
-          echo "FFmpeg Version   : $FFMPEG_VERSION"
           echo "FFmpeg Path      : $FFMPEG_PATH"
           echo "Overall Status   : $STATUS"
           echo "============================================"
 
           # ── Fail job if ffmpeg not found ──
-          if [[ "$FFMPEG_VERSION" != *"ffmpeg version"* ]]; then
+          if [[ "$STATUS" == *"FAILED"* ]]; then
             echo "❌ ffmpeg not found — failing job"
             exit 1
           fi
