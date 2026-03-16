@@ -10,38 +10,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install pack CLI
+      - name: Download static FFmpeg
         run: |
-          curl -sSL https://github.com/buildpacks/pack/releases/download/v0.33.0/pack-v0.33.0-linux.tgz | tar -xz
-          sudo mv pack /usr/local/bin/
-          pack --version
+          mkdir -p ffmpeg
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
+          tar -xJf ffmpeg.tar.xz
+          cp ffmpeg-*-amd64-static/ffmpeg ffmpeg/
+          chmod +x ffmpeg/ffmpeg
 
-      - name: Check Aptfile
-        run: |
-          echo "--- Aptfile contents ---"
-          cat Aptfile
+          # ── Size check ──
+          FFMPEG_SIZE=$(du -sh ffmpeg/ffmpeg | cut -f1)
+          FFMPEG_SIZE_MB=$(du -sm ffmpeg/ffmpeg | cut -f1)
+          echo "📦 ffmpeg binary size: ${FFMPEG_SIZE} (${FFMPEG_SIZE_MB} MB)"
 
       - name: Build test image with buildpacks
         run: |
           pack build test-ffmpeg \
             --builder paketobuildpacks/builder-jammy-base:latest \
-            --buildpack paketo-buildpacks/apt \
             --path .
 
-      - name: Check ffmpeg install status
+      - name: Run check_ffmpeg.py and test status
         run: |
 
           # Find launcher
           LAUNCHER=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "find / -name launcher -type f 2>/dev/null | head -1")
+          echo "Launcher path: $LAUNCHER"
+
+          # Find python path
+          PYTHON_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+            "find / -name python3 -type f 2>/dev/null | head -1")
+          echo "Python path: $PYTHON_PATH"
+
+          # ── Run check_ffmpeg.py ──
+          CHECK_OUTPUT=$(docker run --rm --entrypoint bash test-ffmpeg -c \
+            "$LAUNCHER bash -c '$PYTHON_PATH check_ffmpeg.py'" || echo "SCRIPT FAILED")
+          echo "$CHECK_OUTPUT"
 
           # ── ffmpeg version ──
           FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "$LAUNCHER bash -c 'ffmpeg -version 2>&1 | head -1'" || echo "NOT FOUND")
+            "$LAUNCHER bash -c 'ffmpeg/ffmpeg -version 2>&1 | head -1'" || echo "NOT FOUND")
 
           # ── ffmpeg path ──
           FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c \
             "$LAUNCHER bash -c 'which ffmpeg 2>/dev/null || echo NOT FOUND'")
+
+          # ── ffmpeg size ──
+          FFMPEG_SIZE=$(du -sh ffmpeg/ffmpeg | cut -f1)
+          FFMPEG_SIZE_MB=$(du -sm ffmpeg/ffmpeg | cut -f1)
 
           # ── Status flag ──
           if [[ "$FFMPEG_VERSION" == *"ffmpeg version"* ]]; then
@@ -63,13 +79,14 @@ jobs:
           echo "| Installed | ${INSTALLED} |"                                  >> $GITHUB_STEP_SUMMARY
           echo "| Version | \`${FFMPEG_VERSION}\` |"                           >> $GITHUB_STEP_SUMMARY
           echo "| Path | \`${FFMPEG_PATH}\` |"                                 >> $GITHUB_STEP_SUMMARY
+          echo "| Binary Size | \`${FFMPEG_SIZE} (${FFMPEG_SIZE_MB} MB)\` |"  >> $GITHUB_STEP_SUMMARY
           echo ""                                                                >> $GITHUB_STEP_SUMMARY
           echo "## ⚙️ Build Configuration"                                     >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |"                                              >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|"                                              >> $GITHUB_STEP_SUMMARY
           echo "| Builder | \`paketobuildpacks/builder-jammy-base\` |"         >> $GITHUB_STEP_SUMMARY
-          echo "| Apt Buildpack | \`paketo-buildpacks/apt\` ✅ |"              >> $GITHUB_STEP_SUMMARY
-          echo "| Aptfile | \`ffmpeg\` |"                                       >> $GITHUB_STEP_SUMMARY
+          echo "| FFmpeg | \`static binary (johnvansickle)\` |"                >> $GITHUB_STEP_SUMMARY
+          echo "| Aptfile | \`not required\` |"                                >> $GITHUB_STEP_SUMMARY
           echo "| Run ID | #${{ github.run_number }} |"                        >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |"                            >> $GITHUB_STEP_SUMMARY
           echo "| Branch | \`${{ github.ref_name }}\` |"                       >> $GITHUB_STEP_SUMMARY
@@ -80,6 +97,7 @@ jobs:
           echo "FFmpeg Installed : $INSTALLED"
           echo "FFmpeg Version   : $FFMPEG_VERSION"
           echo "FFmpeg Path      : $FFMPEG_PATH"
+          echo "FFmpeg Size      : ${FFMPEG_SIZE} (${FFMPEG_SIZE_MB} MB)"
           echo "Overall Status   : $STATUS"
           echo "============================================"
 
