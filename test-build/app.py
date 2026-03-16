@@ -2,13 +2,15 @@ import subprocess
 
 print("Testing ffmpeg...")
 
-try:
-    result = subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
-    version_line = result.stdout.decode().split("\n")[0]
-    print(f"✅ ffmpeg is installed: {version_line}")
-except FileNotFoundError:
-    print("❌ ffmpeg NOT found — Add 'ffmpeg' to Aptfile and include paketo-buildpacks/apt")
-except subprocess.CalledProcessError:
-    print("❌ ffmpeg found but failed to run")
-except subprocess.TimeoutExpired:
-    print("❌ ffmpeg check timed out")
+def _ensure_ffmpeg_path() -> None:
+    """Ensure ffmpeg is on PATH. Installed via Cloud Native Buildpacks.
+    Add paketo-buildpacks/apt buildpack and list 'ffmpeg' in Aptfile in the agent directory."""
+    try:
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
+        version_line = result.stdout.decode().split("\n")[0]
+        print(f"✅ ffmpeg is installed: {version_line}")
+        return
+    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+        print("❌ ffmpeg is NOT installed. Add 'ffmpeg' to Aptfile and include paketo-buildpacks/apt in buildpack config.")
+
+_ensure_ffmpeg_path()
