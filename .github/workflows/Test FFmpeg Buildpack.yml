@@ -6,10 +6,6 @@ on:
 jobs:
   test-ffmpeg:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -31,269 +27,75 @@ jobs:
             --buildpack paketo-buildpacks/apt \
             --path .
 
-      - name: Test ffmpeg and generate report
+      - name: Test ffmpeg and write summary
         run: |
-          echo "Testing ffmpeg installation..."
+          echo "Testing ffmpeg..."
 
-          # ✅ Use buildpack launcher — sets PATH correctly for all layers
-          FFMPEG_VERSION=$(docker run --rm \
-            test-ffmpeg \
-            launcher bash -c "ffmpeg -version 2>&1 | head -1" || echo "NOT FOUND")
-
-          FFMPEG_PATH=$(docker run --rm \
-            test-ffmpeg \
-            launcher bash -c "which ffmpeg 2>/dev/null || echo 'NOT FOUND'")
-
-          FFMPEG_PATH_ALL=$(docker run --rm \
-            test-ffmpeg \
-            launcher bash -c "find / -name ffmpeg -type f -executable 2>/dev/null | head -5" || echo "NOT FOUND")
-
-          # Test webm to wav conversion (exactly what voice_router.py _do_stt() does)
-          CONVERSION_RESULT=$(docker run --rm \
-            test-ffmpeg \
-            launcher bash -c "
-              ffmpeg -f lavfi -i sine=frequency=1000:duration=1 /tmp/test.webm -y 2>/dev/null && \
-              ffmpeg -y -i /tmp/test.webm -ar 16000 -ac 1 /tmp/test.wav 2>/dev/null && \
-              echo 'SUCCESS' || echo 'FAILED'
-            ")
-
-          echo "FFmpeg Version : $FFMPEG_VERSION"
-          echo "FFmpeg Path    : $FFMPEG_PATH"
-          echo "Conversion     : $CONVERSION_RESULT"
+          # Use launcher to set PATH correctly
+          FFMPEG_VERSION=$(docker run --rm test-ffmpeg launcher bash -c "ffmpeg -version 2>&1 | head -1" || echo "NOT FOUND")
+          FFMPEG_PATH=$(docker run --rm test-ffmpeg launcher bash -c "which ffmpeg 2>/dev/null || echo 'NOT FOUND'")
+          CONVERSION_RESULT=$(docker run --rm test-ffmpeg launcher bash -c "
+            ffmpeg -f lavfi -i sine=frequency=1000:duration=1 /tmp/test.webm -y 2>/dev/null && \
+            ffmpeg -y -i /tmp/test.webm -ar 16000 -ac 1 /tmp/test.wav 2>/dev/null && \
+            echo 'SUCCESS' || echo 'FAILED'
+          ")
 
           # Set status
           if [[ "$FFMPEG_VERSION" == *"ffmpeg version"* ]]; then
-            STATUS="PASSED"
-            STATUS_COLOR="#2d9e5f"
-            STATUS_ICON="✅"
-            INSTALLED="YES"
+            STATUS="✅ PASSED"
+            INSTALLED="✅ YES"
           else
-            STATUS="FAILED"
-            STATUS_COLOR="#e53e3e"
-            STATUS_ICON="❌"
-            INSTALLED="NO"
+            STATUS="❌ FAILED"
+            INSTALLED="❌ NO"
           fi
 
           if [[ "$CONVERSION_RESULT" == "SUCCESS" ]]; then
-            CONV_STATUS="SUCCESS"
-            CONV_COLOR="#2d9e5f"
-            CONV_ICON="✅"
+            CONV="✅ SUCCESS"
           else
-            CONV_STATUS="FAILED"
-            CONV_COLOR="#e53e3e"
-            CONV_ICON="❌"
+            CONV="❌ FAILED"
           fi
 
-          BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S UTC')"
-          RUN_ID="${{ github.run_number }}"
-          COMMIT="${{ github.sha }}"
-          SHORT_COMMIT="${COMMIT:0:7}"
-          BRANCH="${{ github.ref_name }}"
+          # Write to GitHub Job Summary
+          echo "# 🐳 FFmpeg Buildpack Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Overall Status: ${STATUS}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 FFmpeg Installation" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Installed | ${INSTALLED} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${FFMPEG_VERSION}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Path | \`${FFMPEG_PATH}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎵 WebM → WAV Conversion" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Result | ${CONV} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Command | \`ffmpeg -y -i test.webm -ar 16000 -ac 1 test.wav\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Used By | \`voice_router.py → _do_stt()\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚙️ Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Builder | \`paketobuildpacks/builder-jammy-base\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Apt Buildpack | \`paketo-buildpacks/apt\` ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Aptfile | \`ffmpeg\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Agents | \`opportunity-agent, quote-agent\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Run ID | #${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
 
-          # Generate HTML report
-          mkdir -p docs
-          touch docs/.nojekyll
+          # Also print to logs
+          echo "=============================="
+          echo "FFmpeg Installed : $INSTALLED"
+          echo "FFmpeg Version   : $FFMPEG_VERSION"
+          echo "FFmpeg Path      : $FFMPEG_PATH"
+          echo "Conversion       : $CONV"
+          echo "Overall Status   : $STATUS"
+          echo "=============================="
 
-          cat > docs/index.html << HTMLEOF
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FFmpeg Buildpack Test Report</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f5f7fa;
-      color: #333;
-      padding: 40px 20px;
-    }
-    .container { max-width: 800px; margin: 0 auto; }
-    .header {
-      background: #1a1a2e;
-      color: white;
-      padding: 32px;
-      border-radius: 12px;
-      margin-bottom: 24px;
-    }
-    .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 12px; }
-    .header p { color: #a0aec0; font-size: 14px; margin-top: 4px; }
-    .status-card {
-      padding: 24px;
-      border-radius: 12px;
-      margin-bottom: 24px;
-      background: white;
-      border-left: 6px solid ${STATUS_COLOR};
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    .status-card h2 { font-size: 20px; margin-bottom: 8px; }
-    .status-badge {
-      display: inline-block;
-      padding: 8px 24px;
-      border-radius: 20px;
-      font-size: 15px;
-      font-weight: 700;
-      background: ${STATUS_COLOR};
-      color: white;
-      margin-top: 12px;
-    }
-    .card {
-      background: white;
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    .card h3 {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      color: #1a1a2e;
-      border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 10px;
-    }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 0;
-      border-bottom: 1px solid #f0f0f0;
-      font-size: 14px;
-      gap: 16px;
-    }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { color: #718096; font-weight: 500; min-width: 160px; }
-    .info-value {
-      color: #2d3748;
-      font-weight: 600;
-      font-family: monospace;
-      font-size: 13px;
-      word-break: break-all;
-      text-align: right;
-    }
-    code {
-      background: #f7fafc;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 12px;
-      color: #6b46c1;
-    }
-    .footer {
-      text-align: center;
-      color: #a0aec0;
-      font-size: 12px;
-      margin-top: 32px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-
-    <div class="header">
-      <h1>🐳 FFmpeg Buildpack Test Report</h1>
-      <p>Revinci AI — Cloud Native Buildpacks</p>
-      <p>Build Date &nbsp;: ${BUILD_DATE}</p>
-      <p>Run ID &nbsp;&nbsp;&nbsp;&nbsp;: #${RUN_ID}</p>
-      <p>Commit &nbsp;&nbsp;&nbsp;&nbsp;: ${SHORT_COMMIT}</p>
-      <p>Branch &nbsp;&nbsp;&nbsp;&nbsp;: ${BRANCH}</p>
-    </div>
-
-    <div class="status-card">
-      <h2>Overall Status</h2>
-      <p style="margin-top:8px; color:#718096; font-size:14px">
-        FFmpeg installation test via <code>paketo-buildpacks/apt</code>
-      </p>
-      <div class="status-badge">${STATUS_ICON} ${STATUS}</div>
-    </div>
-
-    <div class="card">
-      <h3>📦 FFmpeg Installation</h3>
-      <div class="info-row">
-        <span class="info-label">Installed</span>
-        <span class="info-value" style="color:${STATUS_COLOR}">${INSTALLED}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Version</span>
-        <span class="info-value">${FFMPEG_VERSION}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Path</span>
-        <span class="info-value">${FFMPEG_PATH}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">All Paths Found</span>
-        <span class="info-value">${FFMPEG_PATH_ALL}</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>🎵 WebM → WAV Conversion Test</h3>
-      <div class="info-row">
-        <span class="info-label">Result</span>
-        <span class="info-value" style="color:${CONV_COLOR}">${CONV_ICON} ${CONV_STATUS}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Command</span>
-        <span class="info-value">ffmpeg -y -i test.webm -ar 16000 -ac 1 test.wav</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Used By</span>
-        <span class="info-value">voice_router.py → _do_stt()</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>⚙️ Build Configuration</h3>
-      <div class="info-row">
-        <span class="info-label">Builder</span>
-        <span class="info-value">paketobuildpacks/builder-jammy-base</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Apt Buildpack</span>
-        <span class="info-value">paketo-buildpacks/apt ✅</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Launcher Used</span>
-        <span class="info-value">launcher bash -c ✅</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Aptfile Contents</span>
-        <span class="info-value">ffmpeg</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Agents Using ffmpeg</span>
-        <span class="info-value">opportunity-agent, quote-agent</span>
-      </div>
-    </div>
-
-    <div class="footer">
-      <p>Generated by GitHub Actions — Revinci AI © 2025</p>
-    </div>
-
-  </div>
-</body>
-</html>
-HTMLEOF
-
-          echo "✓ Report generated successfully"
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./docs
-
-  deploy:
-    needs: test-ffmpeg
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          # Fail the job if ffmpeg not found
+          if [[ "$FFMPEG_VERSION" != *"ffmpeg version"* ]]; then
+            echo "❌ ffmpeg not found — failing job"
+            exit 1
+          fi
