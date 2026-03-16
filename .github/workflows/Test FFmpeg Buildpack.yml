@@ -30,18 +30,19 @@ jobs:
 
       - name: Check ffmpeg install status
         run: |
-          # Find launcher
-          LAUNCHER=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "find / -name launcher -type f 2>/dev/null | head -1")
-          echo "Launcher path: $LAUNCHER"
-
-          # ── ffmpeg version via launcher ──
-          FFMPEG_VERSION=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "$LAUNCHER bash -c 'ffmpeg -version 2>&1 | head -1'" || echo "NOT FOUND")
+          # ── ffmpeg version ──
+          FFMPEG_VERSION=$(docker run --rm \
+            -e PATH=/layers/paketo-buildpacks_apt/apt/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            -e LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib \
+            --entrypoint bash test-ffmpeg -c \
+            "ffmpeg -version 2>&1 | head -1" || echo "NOT FOUND")
 
           # ── ffmpeg path ──
-          FFMPEG_PATH=$(docker run --rm --entrypoint bash test-ffmpeg -c \
-            "$LAUNCHER bash -c 'which ffmpeg 2>/dev/null || echo NOT FOUND'")
+          FFMPEG_PATH=$(docker run --rm \
+            -e PATH=/layers/paketo-buildpacks_apt/apt/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            -e LD_LIBRARY_PATH=/layers/paketo-buildpacks_apt/apt/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib/x86_64-linux-gnu:/layers/paketo-buildpacks_apt/apt/usr/lib \
+            --entrypoint bash test-ffmpeg -c \
+            "which ffmpeg 2>/dev/null || echo NOT FOUND")
 
           # ── Status flag ──
           if [[ "$FFMPEG_VERSION" == *"ffmpeg version"* ]]; then
