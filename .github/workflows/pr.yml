@@ -1,9 +1,8 @@
-name: Add Secrets to Key Vault and Update YAML (PR Based)
+name: Secure Secret Management Pipeline (Key Vault + YAML + PR)
 
 on:
   workflow_dispatch:
     inputs:
-
       environment:
         description: "Select environment"
         required: true
@@ -12,105 +11,27 @@ on:
           - dev
           - qa
 
-      secret_count:
-        description: "How many secrets to add? (1 to 5)"
+      secrets_input:
+        description: "Enter secrets (KEY=VALUE, one per line)"
         required: true
-        default: "1"
-
-      # ---- Secret 1 ----
-      secret_name_1:
-        description: "Secret 1 - Name (e.g. AZURE-OPENAI-KEY)"
-        required: true
-      secret_value_1:
-        description: "Secret 1 - Value"
-        required: true
-
-      # ---- Secret 2 ----
-      secret_name_2:
-        description: "Secret 2 - Name (if count >= 2)"
-        required: false
-      secret_value_2:
-        description: "Secret 2 - Value (if count >= 2)"
-        required: false
-
-      # ---- Secret 3 ----
-      secret_name_3:
-        description: "Secret 3 - Name (if count >= 3)"
-        required: false
-      secret_value_3:
-        description: "Secret 3 - Value (if count >= 3)"
-        required: false
-
-      # ---- Secret 4 ----
-      secret_name_4:
-        description: "Secret 4 - Name (if count >= 4)"
-        required: false
-      secret_value_4:
-        description: "Secret 4 - Value (if count >= 4)"
-        required: false
-
-      # ---- Secret 5 ----
-      secret_name_5:
-        description: "Secret 5 - Name (if count >= 5)"
-        required: false
-      secret_value_5:
-        description: "Secret 5 - Value (if count >= 5)"
-        required: false
 
 jobs:
   add-secrets:
     runs-on: ubuntu-latest
 
     permissions:
-      id-token: write       # OIDC Azure login
-      contents: write       # push branch
+      id-token: write
+      contents: write
 
     steps:
+      # ----------------------------------------
+      # 1. Checkout
+      # ----------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       # ----------------------------------------
-      # STEP 1: Mask only values up to secret_count
-      #         MUST be first step — before any logging
-      # ----------------------------------------
-      - name: Mask secret values
-        run: |
-          COUNT=${{ github.event.inputs.secret_count }}
-
-          mask_value() {
-            local VALUE="$1"
-            if [ -n "$VALUE" ]; then
-              echo "::add-mask::$VALUE"
-            fi
-          }
-
-          mask_value "${{ github.event.inputs.secret_value_1 }}"
-          [ "$COUNT" -ge 2 ] && mask_value "${{ github.event.inputs.secret_value_2 }}"
-          [ "$COUNT" -ge 3 ] && mask_value "${{ github.event.inputs.secret_value_3 }}"
-          [ "$COUNT" -ge 4 ] && mask_value "${{ github.event.inputs.secret_value_4 }}"
-          [ "$COUNT" -ge 5 ] && mask_value "${{ github.event.inputs.secret_value_5 }}"
-
-      # ----------------------------------------
-      # STEP 2: Validate secret_count is 1–5
-      # ----------------------------------------
-      - name: Validate secret count
-        run: |
-          COUNT="${{ github.event.inputs.secret_count }}"
-          if ! [[ "$COUNT" =~ ^[1-5]$ ]]; then
-            echo "❌ secret_count must be 1 to 5. Got: $COUNT"
-            exit 1
-          fi
-          echo "✅ Secret count valid: $COUNT"
-
-      # ----------------------------------------
-      # STEP 3: Checkout develop branch
-      # ----------------------------------------
-      - name: Checkout develop
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}
-          ref: develop
-
-      # ----------------------------------------
-      # STEP 4: Set environment variables
+      # 2. Set Variables
       # ----------------------------------------
       - name: Set variables
         run: |
@@ -126,125 +47,96 @@ jobs:
           echo "FILE=installations/secrets/secret-provider-class-app-secrets-$ENV.yml" >> $GITHUB_ENV
 
       # ----------------------------------------
-      # STEP 5: Azure Login via OIDC (no password)
+      # 3. Azure Login (OIDC)
       # ----------------------------------------
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@v1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # ----------------------------------------
-      # STEP 6: Install yq
+      # 4. Install yq
       # ----------------------------------------
       - name: Install yq
         run: |
-          sudo wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
-            -O /usr/bin/yq
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
           sudo chmod +x /usr/bin/yq
-          yq --version
 
       # ----------------------------------------
-      # STEP 7: Process secrets
-      #         For each secret up to secret_count:
-      #           1. Push value to Azure Key Vault
-      #           2. Append to objects string block
-      #           3. Append to secretObjects data array
+      # 5. Validate Input
       # ----------------------------------------
-      - name: Process secrets
+      - name: Validate secrets input
         run: |
-          COUNT=${{ github.event.inputs.secret_count }}
+          echo "${{ github.event.inputs.secrets_input }}" > secrets.txt
 
-          process_secret() {
-            local RAW_NAME="$1"
-            local VALUE="$2"
+          while IFS= read -r line
+          do
+            if [[ "$line" != *=* ]]; then
+              echo "❌ Invalid format detected"
+              exit 1
+            fi
+          done < secrets.txt
 
-            # Skip if name or value is empty
-            [ -z "$RAW_NAME" ] || [ -z "$VALUE" ] && return
+      # ----------------------------------------
+      # 6. Process Secrets (SECURE)
+      # ----------------------------------------
+      - name: Process secrets securely
+        run: |
+          while IFS= read -r line
+          do
+            KEY=$(echo "$line" | cut -d '=' -f1 | xargs)
+            VALUE=$(echo "$line" | cut -d '=' -f2- | xargs)
+            OBJECT_NAME=$(echo "$KEY" | tr '_' '-')
 
-            # Normalize: uppercase → lowercase, underscore → hyphen
-            local OBJECT_NAME
-            OBJECT_NAME=$(echo "$RAW_NAME" | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+            # Mask secret value
+            echo "::add-mask::$VALUE"
 
-            echo "🔐 Processing: $RAW_NAME → $OBJECT_NAME"
+            echo "Processing secret..."
 
-            # ✅ Push to Azure Key Vault
+            # Add to Key Vault (silent)
             az keyvault secret set \
-              --vault-name "$KV_NAME" \
+              --vault-name $KV_NAME \
               --name "$OBJECT_NAME" \
               --value "$VALUE" \
               --output none
 
-            # ✅ Append to objects string block (- | format)
-            OBJECT_NAME="$OBJECT_NAME" yq e '
-              .spec.parameters.objects += "- |\n  objectName: " + env(OBJECT_NAME) + "\n  objectType: secret\n"
-            ' -i "$FILE"
+            # ----------------------------------------
+            # 1. Update objects section FIRST (- |)
+            # ----------------------------------------
+            CURRENT=$(yq e '.spec.parameters.objects' $FILE)
 
-            # ✅ Append to secretObjects[0].data array
-            RAW_NAME="$RAW_NAME" OBJECT_NAME="$OBJECT_NAME" yq e '
-              .spec.secretObjects[0].data += [{"key": env(RAW_NAME), "objectName": env(OBJECT_NAME)}]
-            ' -i "$FILE"
+            NEW_ENTRY="\n        - |\n          objectName: $OBJECT_NAME\n          objectType: secret"
 
-            echo "✅ Done: $RAW_NAME"
-          }
+            yq e ".spec.parameters.objects = \"$CURRENT$NEW_ENTRY\"" -i $FILE
 
-          process_secret "${{ github.event.inputs.secret_name_1 }}" "${{ github.event.inputs.secret_value_1 }}"
-          [ "$COUNT" -ge 2 ] && process_secret "${{ github.event.inputs.secret_name_2 }}" "${{ github.event.inputs.secret_value_2 }}"
-          [ "$COUNT" -ge 3 ] && process_secret "${{ github.event.inputs.secret_name_3 }}" "${{ github.event.inputs.secret_value_3 }}"
-          [ "$COUNT" -ge 4 ] && process_secret "${{ github.event.inputs.secret_name_4 }}" "${{ github.event.inputs.secret_value_4 }}"
-          [ "$COUNT" -ge 5 ] && process_secret "${{ github.event.inputs.secret_name_5 }}" "${{ github.event.inputs.secret_value_5 }}"
+            # ----------------------------------------
+            # 2. Update secretObjects NEXT (- key)
+            # ----------------------------------------
+            yq e '.spec.secretObjects[0].data += [{"key": "'"$KEY"'", "objectName": "'"$OBJECT_NAME"'"}]' -i $FILE
+
+          done < secrets.txt
 
       # ----------------------------------------
-      # STEP 8: Show YAML diff
-      #         Values are masked — safe to print
+      # 7. Commit Changes
       # ----------------------------------------
-      - name: Show YAML diff
-        run: git diff "$FILE"
-
-      # ----------------------------------------
-      # STEP 9: Commit and push to new branch
-      # ----------------------------------------
-      - name: Commit and push branch
+      - name: Commit changes
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          BRANCH="add-secrets/${{ github.event.inputs.environment }}/${{ github.run_id }}"
-          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          git checkout -b add-secrets-${{ github.run_id }}
 
-          git checkout -b "$BRANCH"
-          git add "$FILE"
-          git commit -m "chore: add ${{ github.event.inputs.secret_count }} secret(s) for ${{ github.event.inputs.environment }} [run: ${{ github.run_id }}]"
-          git push origin "$BRANCH"
+          git add $FILE
+          git commit -m "Add secrets for $ENV"
 
       # ----------------------------------------
-      # STEP 10: Open PR → always targets develop
+      # 8. Create PR
       # ----------------------------------------
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.GH_PAT }}
-          base: develop
-          branch: ${{ env.BRANCH }}
-          title: "🔐 Add ${{ github.event.inputs.secret_count }} secret(s) for [${{ github.event.inputs.environment }}]"
-          body: |
-            ## 🔐 Key Vault + YAML Update
-
-            | Field         | Value |
-            |---------------|-------|
-            | Environment   | `${{ github.event.inputs.environment }}` |
-            | Key Vault     | `${{ env.KV_NAME }}` |
-            | YAML File     | `${{ env.FILE }}` |
-            | Secrets Added | `${{ github.event.inputs.secret_count }}` |
-            | Triggered by  | `${{ github.actor }}` |
-
-            ### Secret Names (values masked in all logs)
-            - `${{ github.event.inputs.secret_name_1 }}`
-            - `${{ github.event.inputs.secret_name_2 }}`
-            - `${{ github.event.inputs.secret_name_3 }}`
-            - `${{ github.event.inputs.secret_name_4 }}`
-            - `${{ github.event.inputs.secret_name_5 }}`
-
-            > ⚠️ Review YAML diff carefully before merging into `develop`.
-          delete-branch: true
+          branch: add-secrets-${{ github.run_id }}
+          title: "Add secrets (${{ env.ENV }})"
+          body: "Securely added secrets to Key Vault and updated YAML"
