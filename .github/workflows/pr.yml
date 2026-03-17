@@ -1,10 +1,10 @@
-name: Secure Secret Management Pipeline (Key Vault + YAML + PR)
+name: Add Secrets to Key Vault
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Select environment"
+        description: 'Environment (dev/qa)'
         required: true
         type: choice
         options:
@@ -12,131 +12,95 @@ on:
           - qa
 
       secrets_input:
-        description: "Enter secrets (KEY=VALUE, one per line)"
+        description: 'Secrets (key=value, one per line)'
         required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
 
 jobs:
   add-secrets:
     runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: write
+    environment: ${{ inputs.environment }}
 
     steps:
-      # ----------------------------------------
-      # 1. Checkout
-      # ----------------------------------------
-      - name: Checkout code
-        uses: actions/checkout@v3
 
-      # ----------------------------------------
-      # 2. Set Variables
-      # ----------------------------------------
-      - name: Set variables
-        run: |
-          ENV="${{ github.event.inputs.environment }}"
-          echo "ENV=$ENV" >> $GITHUB_ENV
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          if [ "$ENV" == "dev" ]; then
-            echo "KV_NAME=your-dev-keyvault" >> $GITHUB_ENV
-          else
-            echo "KV_NAME=your-qa-keyvault" >> $GITHUB_ENV
-          fi
-
-          echo "FILE=installations/secrets/secret-provider-class-app-secrets-$ENV.yml" >> $GITHUB_ENV
-
-      # ----------------------------------------
-      # 3. Azure Login (OIDC)
-      # ----------------------------------------
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # ----------------------------------------
-      # 4. Install yq
-      # ----------------------------------------
+      - name: Set environment variables
+        run: |
+          case "${{ inputs.environment }}" in
+            dev)
+              echo "KV_NAME=rvcplatform-dev-keyvault" >> $GITHUB_ENV
+              echo "YAML_FILE=installations/secrets/secret-provider-class-app-secrets-dev.yml" >> $GITHUB_ENV
+              ;;
+            qa)
+              echo "KV_NAME=rvcplatform-qa-keyvault" >> $GITHUB_ENV
+              echo "YAML_FILE=installations/secrets/secret-provider-class-app-secrets-qa.yml" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Invalid environment"
+              exit 1
+              ;;
+          esac
+
+      - name: Show config
+        run: |
+          echo "ENV : ${{ inputs.environment }}"
+          echo "KV  : $KV_NAME"
+          echo "YAML: $YAML_FILE"
+
       - name: Install yq
         run: |
-          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+          sudo wget -qO /usr/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/bin/yq
 
-      # ----------------------------------------
-      # 5. Validate Input
-      # ----------------------------------------
-      - name: Validate secrets input
+      - name: Add Secrets to Key Vault
         run: |
-          echo "${{ github.event.inputs.secrets_input }}" > secrets.txt
+          chmod +x cicd/scripts/keyvault.sh
+          ./cicd/scripts/keyvault.sh "${{ inputs.secrets_input }}"
 
-          while IFS= read -r line
-          do
-            if [[ "$line" != *=* ]]; then
-              echo "❌ Invalid format detected"
-              exit 1
-            fi
-          done < secrets.txt
-
-      # ----------------------------------------
-      # 6. Process Secrets (SECURE)
-      # ----------------------------------------
-      - name: Process secrets securely
+      - name: Update YAML Configuration
         run: |
-          while IFS= read -r line
-          do
-            KEY=$(echo "$line" | cut -d '=' -f1 | xargs)
-            VALUE=$(echo "$line" | cut -d '=' -f2- | xargs)
-            OBJECT_NAME=$(echo "$KEY" | tr '_' '-')
+          chmod +x cicd/scripts/yaml_update.sh
+          ./cicd/scripts/yaml_update.sh
 
-            # Mask secret value
-            echo "::add-mask::$VALUE"
-
-            echo "Processing secret..."
-
-            # Add to Key Vault (silent)
-            az keyvault secret set \
-              --vault-name $KV_NAME \
-              --name "$OBJECT_NAME" \
-              --value "$VALUE" \
-              --output none
-
-            # ----------------------------------------
-            # 1. Update objects section FIRST (- |)
-            # ----------------------------------------
-            CURRENT=$(yq e '.spec.parameters.objects' $FILE)
-
-            NEW_ENTRY="\n        - |\n          objectName: $OBJECT_NAME\n          objectType: secret"
-
-            yq e ".spec.parameters.objects = \"$CURRENT$NEW_ENTRY\"" -i $FILE
-
-            # ----------------------------------------
-            # 2. Update secretObjects NEXT (- key)
-            # ----------------------------------------
-            yq e '.spec.secretObjects[0].data += [{"key": "'"$KEY"'", "objectName": "'"$OBJECT_NAME"'"}]' -i $FILE
-
-          done < secrets.txt
-
-      # ----------------------------------------
-      # 7. Commit Changes
-      # ----------------------------------------
       - name: Commit changes
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git checkout -b add-secrets-${{ github.run_id }}
+          git add $YAML_FILE
 
-          git add $FILE
-          git commit -m "Add secrets for $ENV"
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
 
-      # ----------------------------------------
-      # 8. Create PR
-      # ----------------------------------------
+          git commit -m "🔐 Add secrets for ${{ inputs.environment }}"
+
       - name: Create Pull Request
+        if: success()
         uses: peter-evans/create-pull-request@v5
         with:
+          title: "🔐 Add secrets (${{ inputs.environment }})"
+          body: "Secrets added to Key Vault and YAML updated"
           branch: add-secrets-${{ github.run_id }}
-          title: "Add secrets (${{ env.ENV }})"
-          body: "Securely added secrets to Key Vault and updated YAML"
+          base: develop
+          commit-message: "Add secrets for ${{ inputs.environment }}"
+
+      - name: Summary
+        run: |
+          echo "=================================="
+          echo "✅ Key Vault updated"
+          echo "✅ YAML updated"
+          echo "📄 File: $YAML_FILE"
+          echo "=================================="
