@@ -62,22 +62,31 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      id-token: write       # required for OIDC Azure login
-      contents: write       # required to push branch
+      id-token: write       # OIDC Azure login
+      contents: write       # push branch
 
     steps:
 
       # ----------------------------------------
-      # STEP 1: Mask ALL values immediately
-      #         MUST be first — before any logging
+      # STEP 1: Mask only values up to secret_count
+      #         MUST be first step — before any logging
       # ----------------------------------------
       - name: Mask secret values
         run: |
-          echo "::add-mask::${{ github.event.inputs.secret_value_1 }}"
-          [ -n "${{ github.event.inputs.secret_value_2 }}" ] && echo "::add-mask::${{ github.event.inputs.secret_value_2 }}"
-          [ -n "${{ github.event.inputs.secret_value_3 }}" ] && echo "::add-mask::${{ github.event.inputs.secret_value_3 }}"
-          [ -n "${{ github.event.inputs.secret_value_4 }}" ] && echo "::add-mask::${{ github.event.inputs.secret_value_4 }}"
-          [ -n "${{ github.event.inputs.secret_value_5 }}" ] && echo "::add-mask::${{ github.event.inputs.secret_value_5 }}"
+          COUNT=${{ github.event.inputs.secret_count }}
+
+          mask_value() {
+            local VALUE="$1"
+            if [ -n "$VALUE" ]; then
+              echo "::add-mask::$VALUE"
+            fi
+          }
+
+          mask_value "${{ github.event.inputs.secret_value_1 }}"
+          [ "$COUNT" -ge 2 ] && mask_value "${{ github.event.inputs.secret_value_2 }}"
+          [ "$COUNT" -ge 3 ] && mask_value "${{ github.event.inputs.secret_value_3 }}"
+          [ "$COUNT" -ge 4 ] && mask_value "${{ github.event.inputs.secret_value_4 }}"
+          [ "$COUNT" -ge 5 ] && mask_value "${{ github.event.inputs.secret_value_5 }}"
 
       # ----------------------------------------
       # STEP 2: Validate secret_count is 1–5
@@ -138,17 +147,10 @@ jobs:
 
       # ----------------------------------------
       # STEP 7: Process secrets
-      #
-      # objects block is a STRING (- | format):
-      #
-      #   objects: |
-      #     - |
-      #       objectName: my-secret
-      #       objectType: secret
-      #
-      # So we READ the current string value and
-      # APPEND new entry as raw text using yq
-      # env variable injection (safe, no quoting issues)
+      #         For each secret up to secret_count:
+      #           1. Push value to Azure Key Vault
+      #           2. Append to objects string block
+      #           3. Append to secretObjects data array
       # ----------------------------------------
       - name: Process secrets
         run: |
@@ -161,22 +163,20 @@ jobs:
             # Skip if name or value is empty
             [ -z "$RAW_NAME" ] || [ -z "$VALUE" ] && return
 
-            # Normalize name → lowercase, underscores to hyphens
+            # Normalize: uppercase → lowercase, underscore → hyphen
             local OBJECT_NAME
             OBJECT_NAME=$(echo "$RAW_NAME" | tr '_' '-' | tr '[:upper:]' '[:lower:]')
 
-            echo "🔐 Processing: $RAW_NAME → objectName: $OBJECT_NAME"
+            echo "🔐 Processing: $RAW_NAME → $OBJECT_NAME"
 
             # ✅ Push to Azure Key Vault
-            # --output none ensures the value is never printed to logs
             az keyvault secret set \
               --vault-name "$KV_NAME" \
               --name "$OBJECT_NAME" \
               --value "$VALUE" \
               --output none
 
-            # ✅ Append to objects STRING block (- | format)
-            # Uses env var to avoid shell quoting/injection issues
+            # ✅ Append to objects string block (- | format)
             OBJECT_NAME="$OBJECT_NAME" yq e '
               .spec.parameters.objects += "- |\n  objectName: " + env(OBJECT_NAME) + "\n  objectType: secret\n"
             ' -i "$FILE"
@@ -189,9 +189,7 @@ jobs:
             echo "✅ Done: $RAW_NAME"
           }
 
-          # Only process up to the count entered
           process_secret "${{ github.event.inputs.secret_name_1 }}" "${{ github.event.inputs.secret_value_1 }}"
-
           [ "$COUNT" -ge 2 ] && process_secret "${{ github.event.inputs.secret_name_2 }}" "${{ github.event.inputs.secret_value_2 }}"
           [ "$COUNT" -ge 3 ] && process_secret "${{ github.event.inputs.secret_name_3 }}" "${{ github.event.inputs.secret_value_3 }}"
           [ "$COUNT" -ge 4 ] && process_secret "${{ github.event.inputs.secret_name_4 }}" "${{ github.event.inputs.secret_value_4 }}"
@@ -199,13 +197,13 @@ jobs:
 
       # ----------------------------------------
       # STEP 8: Show YAML diff
-      # Values are masked — safe to print
+      #         Values are masked — safe to print
       # ----------------------------------------
       - name: Show YAML diff
         run: git diff "$FILE"
 
       # ----------------------------------------
-      # STEP 9: Commit to new branch off develop
+      # STEP 9: Commit and push to new branch
       # ----------------------------------------
       - name: Commit and push branch
         run: |
