@@ -22,3 +22,6 @@ jobs:
 
       - name: Verify Trivy Installation
         run: trivy --version
+
+      - name: Run Sample Scan (Filesystem)
+        run: trivy fs .
