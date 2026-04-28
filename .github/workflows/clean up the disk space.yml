@@ -1,47 +1,32 @@
 name: clean up the disk space
-
 on:
   workflow_dispatch:
-
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-
     steps:
       - name: Free up disk space
         run: |
           echo "Disk space before cleanup:"
           df -h
 
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOL_CACHE"
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          # Remove unused tools
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOL_CACHE" /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
 
-          sudo apt-get remove -y '^aspnetcore-.*' || true
-          sudo apt-get remove -y '^dotnet-.*' --fix-missing || true
-          sudo apt-get remove -y '^llvm-.*' --fix-missing || true
-          sudo apt-get remove -y 'php.*' --fix-missing || true
-          sudo apt-get remove -y '^mongodb-.*' --fix-missing || true
-          sudo apt-get remove -y '^mysql-.*' --fix-missing || true
+          # Remove unused packages
+          sudo apt-get remove -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing || true
+          sudo apt-get autoremove -y && sudo apt-get clean
 
-          sudo apt-get remove -y google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing || true
-
-          sudo apt-get autoremove -y
-          sudo apt-get clean
-
+          # Clean Docker
           sudo docker system prune -af --volumes
+
+          # Clean /tmp buildpack leftover files
+          sudo rm -rf /tmp/lifecycle* /tmp/pack-* /tmp/buildpack* || true
+
+          # Redirect /tmp to main disk (45GB) instead of tmpfs (7.9GB)
           sudo mkdir -p /mnt/tmp
           sudo mount --bind /mnt/tmp /tmp
           sudo chmod 1777 /tmp
-
-          sudo rm -rf /tmp/lifecycle* || true
-          sudo rm -rf /tmp/pack-* || true
-          sudo rm -rf /tmp/buildpack* || true
 
           echo "Disk space after cleanup:"
           df -h
