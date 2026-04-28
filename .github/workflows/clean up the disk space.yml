@@ -35,6 +35,9 @@ jobs:
           sudo apt-get clean
 
           sudo docker system prune -af --volumes
+          sudo mkdir -p /mnt/tmp
+          sudo mount --bind /mnt/tmp /tmp
+          sudo chmod 1777 /tmp
 
           sudo rm -rf /tmp/lifecycle* || true
           sudo rm -rf /tmp/pack-* || true
